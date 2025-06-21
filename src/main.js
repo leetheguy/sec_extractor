@@ -9,11 +9,12 @@ const dbOperations = require('./data_operations');
 const apiFetcher = require('./api_fetcher');
 const dataProcessor = require('./data_processor');
 const initialSetup = require('./initial_setup');
-const config = require('./config'); // Ensure config is imported
-const sqlLogger = require('./sql_logger'); // Import sqlLogger
+const config = require('./config');
+const sqlLogger = require('./sql_logger');
 
 // Define command-line arguments
-const argv = yargs()
+// Store the yargs builder instance
+const yargsBuilder = yargs()
     .option('ticker', {
         alias: 't',
         description: 'Stock ticker symbol of the company to process (e.g., AAPL)',
@@ -26,8 +27,12 @@ const argv = yargs()
         default: false,
     })
     .help()
-    .alias('h', 'help')
-    .argv;
+    .alias('h', 'help');
+
+// Explicitly parse process.argv.slice(2)
+const argv = yargsBuilder.parse(process.argv.slice(2));
+
+// console.log('Parsed arguments:', argv);
 
 /**
  * Main function to run the SEC EDGAR data extraction process.
@@ -84,7 +89,7 @@ async function main() {
         } else if (!argv.setup) {
             // If no ticker and no setup flag, show usage
             console.log('No ticker provided. Use --ticker <SYMBOL> to process data or --setup for initial setup.');
-            yargs.showHelp();
+            yargsBuilder.showHelp();
         }
 
     } catch (error) {
