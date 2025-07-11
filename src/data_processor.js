@@ -86,19 +86,32 @@ function extractFinancialPeriods(companyFactsJson) {
     const periods = new Map(); // Use a Map to ensure uniqueness by a composite key
 
     const addPeriod = (fy, fp, end, form) => {
-        if (!fy || !end) return; // Must have fiscal year and end date
+        if (!fy || !end) return;
 
-        const isAnnual = form && form.includes('10-K'); // Simple heuristic for annual
-        const quarter = isAnnual ? null : fp; // Quarter is null for annual reports
+        const isAnnual = form && form.includes('10-K');
+
+        let quarterValue = null; // Initialize to null
+        if (!isAnnual && fp) {
+            // Attempt to parse quarter from fp
+            const fpString = String(fp); // Ensure fp is treated as a string for matching
+            const quarterMatch = fpString.match(/Q(\d)/); // Matches "Q1", "Q2", etc.
+            if (quarterMatch && quarterMatch[1]) {
+                quarterValue = parseInt(quarterMatch[1], 10); // Extract the number (1-4)
+            } else if (!isNaN(parseInt(fpString, 10))) { // Check if fp is already a number string (e.g., "1", "2")
+                quarterValue = parseInt(fpString, 10);
+            }
+            // If it's not annual, and fp is not a valid "Qx" string or a number string,
+            // quarterValue remains null, which is acceptable for the INTEGER column.
+        }
 
         // Create a unique key for the map
-        const periodKey = `${fy}-${quarter || 'null'}-${end}-${isAnnual}`;
+        const periodKey = `${fy}-${quarterValue || 'null'}-${end}-${isAnnual}`;
 
         if (!periods.has(periodKey)) {
             periods.set(periodKey, {
                 year: fy,
-                quarter: quarter,
-                period_end_date: new Date(end), // Convert to Date object
+                quarter: quarterValue, // Use the correctly parsed integer or null
+                period_end_date: new Date(end),
                 is_annual: isAnnual
             });
         }
@@ -150,10 +163,34 @@ function extractFinancialFacts(companyFactsJson, taxonomyTermMap, financialPerio
                         for (let i = 0; i < termData.units[unitType].length; i++) {
                             const fact = termData.units[unitType][i];
 
-                            const isAnnual = fact.form && fact.form.includes('10-K');
-                            const quarter = isAnnual ? null : fact.fp;
-                            const periodKey = `${fact.fy}-${quarter || 'null'}-${fact.end}-${isAnnual}`;
-                            const periodId = financialPeriodMap.get(periodKey); // Get the ID for this period
+                            // --- IMPORTANT FIX START ---
+                            // Skip facts if fiscal year or period end date are missing,
+                            // as these periods would not have been added to the map in extractFinancialPeriods.
+                            if (!fact.fy || !fact.end) {
+                                console.warn(`Fact for term '${termName}' missing fiscal year or period end date. Skipping fact.`);
+                                continue;
+                            }
+                            // --- IMPORTANT FIX END ---
+
+                            const isAnnualFact = fact.form && fact.form.includes('10-K');
+                            let quarterValueFact = null;
+
+                            // Apply the same quarter parsing logic as in extractFinancialPeriods
+                            if (!isAnnualFact && fact.fp) {
+                                const fpStringFact = String(fact.fp);
+                                const quarterMatchFact = fpStringFact.match(/Q(\d)/);
+                                if (quarterMatchFact && quarterMatchFact[1]) {
+                                    quarterValueFact = parseInt(quarterMatchFact[1], 10);
+                                } else if (!isNaN(parseInt(fpStringFact, 10))) {
+                                    quarterValueFact = parseInt(fpStringFact, 10);
+                                }
+                            }
+
+                            // periodEndDateFormatted is already YYYY-MM-DD from JSON
+                            const periodEndDateFormatted = fact.end;
+
+                            const periodKey = `${fact.fy}-${quarterValueFact || 'null'}-${periodEndDateFormatted}-${isAnnualFact}`;
+                            const periodId = financialPeriodMap.get(periodKey);
 
                             if (!periodId) {
                                 console.warn(`Financial period '${periodKey}' not found in map. Skipping fact.`);
@@ -168,8 +205,8 @@ function extractFinancialFacts(companyFactsJson, taxonomyTermMap, financialPerio
                                 unit: unitType,
                                 form_type: fact.form,
                                 filing_date: new Date(fact.filed),
-                                frame: fact.frame || null, // Frame is optional
-                                source_json_path: `${taxonomyType}.${termName}.units.${unitType}[${i}]` // For auditing
+                                frame: fact.frame || null,
+                                source_json_path: `${taxonomyType}.${termName}.units.${unitType}[${i}]`
                             });
                         }
                     }
@@ -179,6 +216,122 @@ function extractFinancialFacts(companyFactsJson, taxonomyTermMap, financialPerio
     }
     return facts;
 }
+
+// function extractFinancialFacts(companyFactsJson, taxonomyTermMap, financialPeriodMap) {
+//     const facts = [];
+//     const cik = getCikFromJson(companyFactsJson);
+
+//     if (companyFactsJson.facts) {
+//         for (const taxonomyType in companyFactsJson.facts) { // e.g., 'us-gaap', 'dei'
+//             for (const termName in companyFactsJson.facts[taxonomyType]) {
+//                 const termData = companyFactsJson.facts[taxonomyType][termName];
+//                 const taxonomyId = taxonomyTermMap.get(termName); // Get the ID for this term
+
+//                 if (!taxonomyId) {
+//                     console.warn(`Taxonomy term '${termName}' not found in map. Skipping facts for this term.`);
+//                     continue;
+//                 }
+
+//                 if (termData.units) {
+//                     for (const unitType in termData.units) { // e.g., 'USD', 'shares'
+//                         for (let i = 0; i < termData.units[unitType].length; i++) {
+//                             const fact = termData.units[unitType][i];
+
+//                             const isAnnualFact = fact.form && fact.form.includes('10-K'); // Renamed for clarity
+//                             let quarterValueFact = null; // Initialize for this fact
+
+//                             // Apply the same quarter parsing logic as in extractFinancialPeriods
+//                             if (!isAnnualFact && fact.fp) {
+//                                 const fpStringFact = String(fact.fp);
+//                                 const quarterMatchFact = fpStringFact.match(/Q(\d)/);
+//                                 if (quarterMatchFact && quarterMatchFact[1]) {
+//                                     quarterValueFact = parseInt(quarterMatchFact[1], 10);
+//                                 } else if (!isNaN(parseInt(fpStringFact, 10))) {
+//                                     quarterValueFact = parseInt(fpStringFact, 10);
+//                                 }
+//                             }
+
+//                             // Ensure period_end_date is consistently formatted as YYYY-MM-DD
+//                             // fact.end from SEC JSON is typically already YYYY-MM-DD
+//                             const periodEndDateFormatted = fact.end;
+
+//                             const periodKey = `${fact.fy}-${quarterValueFact || 'null'}-${periodEndDateFormatted}-${isAnnualFact}`;
+//                             const periodId = financialPeriodMap.get(periodKey); // Get the ID for this period
+
+//                             if (!periodId) {
+//                                 console.warn(`Financial period '${periodKey}' not found in map. Skipping fact.`);
+//                                 continue;
+//                             }
+
+//                             facts.push({
+//                                 cik: cik,
+//                                 taxonomy_id: taxonomyId,
+//                                 period_id: periodId,
+//                                 value: fact.val,
+//                                 unit: unitType,
+//                                 form_type: fact.form,
+//                                 filing_date: new Date(fact.filed),
+//                                 frame: fact.frame || null, // Frame is optional
+//                                 source_json_path: `${taxonomyType}.${termName}.units.${unitType}[${i}]` // For auditing
+//                             });
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     return facts;
+// }
+
+// function extractFinancialFacts(companyFactsJson, taxonomyTermMap, financialPeriodMap) {
+//     const facts = [];
+//     const cik = getCikFromJson(companyFactsJson);
+
+//     if (companyFactsJson.facts) {
+//         for (const taxonomyType in companyFactsJson.facts) { // e.g., 'us-gaap', 'dei'
+//             for (const termName in companyFactsJson.facts[taxonomyType]) {
+//                 const termData = companyFactsJson.facts[taxonomyType][termName];
+//                 const taxonomyId = taxonomyTermMap.get(termName); // Get the ID for this term
+
+//                 if (!taxonomyId) {
+//                     console.warn(`Taxonomy term '${termName}' not found in map. Skipping facts for this term.`);
+//                     continue;
+//                 }
+
+//                 if (termData.units) {
+//                     for (const unitType in termData.units) { // e.g., 'USD', 'shares'
+//                         for (let i = 0; i < termData.units[unitType].length; i++) {
+//                             const fact = termData.units[unitType][i];
+
+//                             const isAnnual = fact.form && fact.form.includes('10-K');
+//                             const quarter = isAnnual ? null : fact.fp;
+//                             const periodKey = `${fact.fy}-${quarter || 'null'}-${fact.end}-${isAnnual}`;
+//                             const periodId = financialPeriodMap.get(periodKey); // Get the ID for this period
+
+//                             if (!periodId) {
+//                                 console.warn(`Financial period '${periodKey}' not found in map. Skipping fact.`);
+//                                 continue;
+//                             }
+
+//                             facts.push({
+//                                 cik: cik,
+//                                 taxonomy_id: taxonomyId,
+//                                 period_id: periodId,
+//                                 value: fact.val,
+//                                 unit: unitType,
+//                                 form_type: fact.form,
+//                                 filing_date: new Date(fact.filed),
+//                                 frame: fact.frame || null, // Frame is optional
+//                                 source_json_path: `${taxonomyType}.${termName}.units.${unitType}[${i}]` // For auditing
+//                             });
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     return facts;
+// }
 
 // --- Main Processing Function ---
 

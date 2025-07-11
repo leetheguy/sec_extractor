@@ -1,0 +1,100 @@
+-- SEC EDGAR Database Creation Script
+-- This script creates the database and schema for the SEC EDGAR data extraction tool
+
+-- Create database
+-- CREATE DATABASE sec_edgar_db;
+
+-- Connect to the database
+-- \c sec_edgar_db;
+
+-- Create tables
+-- 1. companies table
+CREATE TABLE companies (
+    cik INTEGER PRIMARY KEY,
+    entity_name TEXT NOT NULL,
+    ticker TEXT UNIQUE,
+    title TEXT
+);
+
+-- 2. taxonomy_terms table
+CREATE TABLE taxonomy_terms (
+    taxonomy_id SERIAL PRIMARY KEY,
+    term_name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    parent_taxonomy_id INTEGER REFERENCES taxonomy_terms(taxonomy_id) ON DELETE SET NULL,
+    broad_category_taxonomy_id INTEGER REFERENCES taxonomy_terms(taxonomy_id) ON DELETE SET NULL,
+    is_broad_category BOOLEAN NOT NULL DEFAULT FALSE,
+    taxonomy_source TEXT NOT NULL
+);
+
+-- 3. financial_periods table
+CREATE TABLE financial_periods (
+    period_id SERIAL PRIMARY KEY,
+    year INTEGER NOT NULL,
+    quarter INTEGER,
+    period_end_date DATE NOT NULL,
+    is_annual BOOLEAN NOT NULL,
+    UNIQUE(year, quarter, period_end_date, is_annual)
+);
+
+-- 4. financial_facts table
+CREATE TABLE financial_facts (
+    fact_id BIGSERIAL PRIMARY KEY,
+    cik INTEGER NOT NULL REFERENCES companies(cik) ON DELETE CASCADE,
+    taxonomy_id INTEGER NOT NULL REFERENCES taxonomy_terms(taxonomy_id) ON DELETE RESTRICT,
+    period_id INTEGER NOT NULL REFERENCES financial_periods(period_id) ON DELETE RESTRICT,
+    value NUMERIC,
+    unit TEXT NOT NULL,
+    form_type TEXT NOT NULL,
+    filing_date DATE NOT NULL,
+    frame TEXT,
+    source_json_path TEXT
+);
+
+-- 5. cik_ticker_mapping table
+CREATE TABLE cik_ticker_mapping (
+    mapping_id SERIAL PRIMARY KEY,
+    cik_str TEXT NOT NULL UNIQUE,
+    ticker TEXT NOT NULL,
+    title TEXT NOT NULL
+);
+
+-- Create indexes
+-- Indexes for taxonomy_terms
+CREATE INDEX idx_taxonomy_terms_parent ON taxonomy_terms(parent_taxonomy_id);
+CREATE INDEX idx_taxonomy_terms_broad_category ON taxonomy_terms(broad_category_taxonomy_id);
+CREATE INDEX idx_taxonomy_terms_source ON taxonomy_terms(taxonomy_source);
+
+-- Indexes for financial_periods
+CREATE INDEX idx_financial_periods_year_quarter ON financial_periods(year, quarter);
+CREATE INDEX idx_financial_periods_end_date ON financial_periods(period_end_date);
+
+-- Indexes for financial_facts
+CREATE INDEX idx_financial_facts_cik ON financial_facts(cik);
+CREATE INDEX idx_financial_facts_taxonomy_id ON financial_facts(taxonomy_id);
+CREATE INDEX idx_financial_facts_period_id ON financial_facts(period_id);
+CREATE INDEX idx_financial_facts_filing_date ON financial_facts(filing_date);
+CREATE UNIQUE INDEX idx_financial_facts_composite ON financial_facts(cik, taxonomy_id, period_id, form_type, unit);
+-- CREATE INDEX idx_financial_facts_composite ON financial_facts(cik, taxonomy_id, period_id, form_type, unit);
+
+-- Indexes for cik_ticker_mapping
+CREATE INDEX idx_cik_ticker_mapping_ticker ON cik_ticker_mapping(ticker);
+
+-- Insert predefined broad category terms
+INSERT INTO taxonomy_terms (term_name, description, parent_taxonomy_id, broad_category_taxonomy_id, is_broad_category, taxonomy_source)
+VALUES 
+('Assets', 'Total assets of the entity.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('Liabilities', 'Total liabilities of the entity.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('Equity', 'Total equity of the entity.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('Revenues', 'Total revenues of the entity.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('Expenses', 'Total expenses of the entity.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('CashFlow', 'Cash flow related items.', NULL, NULL, TRUE, 'SYSTEM_DEFINED'),
+('Other', 'Other financial items not categorized elsewhere.', NULL, NULL, TRUE, 'SYSTEM_DEFINED');
+
+-- Grant privileges
+-- GRANT ALL PRIVILEGES ON DATABASE sec_edgar_db TO postgres;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres;
+
+-- Notify completion
+-- SELECT 'SEC EDGAR database and schema created successfully.' AS result;

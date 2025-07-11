@@ -1,5 +1,4 @@
 // src/initial_setup.js
-
 const apiFetcher = require('./api_fetcher');
 const dbOperations = require('./data_operations');
 const config = require('./config'); // For paths if needed
@@ -10,20 +9,29 @@ const config = require('./config'); // For paths if needed
 async function populateCikTickerMapping() {
     console.log('Populating CIK-ticker mapping...');
     try {
-        const tickersData = await apiFetcher.fetchCompanyTickers();
-        const mappings = [];
+        const tickersData = await apiFetcher.fetchCompanyTickers(); // This fetches the JSON
+        const uniqueMappings = new Map(); // Use a Map to ensure uniqueness by cik_str
+
         // The company_tickers.json is an object where keys are CIKs (e.g., "CIK0000320193")
         // and values are objects like { "cik_str": "320193", "ticker": "AAPL", "title": "Apple Inc." }
         for (const cikKey in tickersData) {
             const data = tickersData[cikKey];
-            mappings.push({
-                cik_str: data.cik_str,
-                ticker: data.ticker,
-                title: data.title
-            });
+            // Ensure cik_str is a string and not empty, and add to map
+            if (data.cik_str) {
+                // The key for the map is the cik_str, ensuring uniqueness.
+                // If a duplicate cik_str is encountered, the new value will overwrite the old one.
+                uniqueMappings.set(data.cik_str, {
+                    cik_str: data.cik_str,
+                    ticker: data.ticker,
+                    title: data.title
+                });
+            }
         }
-        await dbOperations.batchUpsertCikTickerMappings(mappings);
-        console.log(`Successfully populated ${mappings.length} CIK-ticker mappings.`);
+        // Convert the Map values back into an array for batch processing
+        const mappingsArray = Array.from(uniqueMappings.values());
+
+        await dbOperations.batchUpsertCikTickerMappings(mappingsArray); // This sends the deduplicated batch
+        console.log(`Successfully populated ${mappingsArray.length} CIK-ticker mappings.`);
     } catch (error) {
         console.error('Error populating CIK-ticker mapping:', error);
         throw error;
