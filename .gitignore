@@ -1,9 +1,12 @@
 # app specific
 data/
 sql/
+create_sec_edgar_db.sql.bak
+finviz(1).csv
 
 # Node modules
 node_modules/
+package-lock.json
 
 # Logs
 logs/

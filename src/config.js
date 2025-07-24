@@ -9,9 +9,12 @@ module.exports = {
         database: process.env.DB_NAME,// || 'sec_edgar_db',
         password: process.env.DB_PASSWORD,// || 'postgres',
         port: process.env.DB_PORT,// || 5432,
-        ssl: {
-            rejectUnauthorized: false // This allows self-signed certificates for development
-        }
+        ssl: process.env.DB_SSL === 'true' 
+            ? { rejectUnauthorized: false } 
+            : false
+        // ssl: {
+        //     rejectUnauthorized: false // This allows self-signed certificates for development
+        // }
     },
     api: {
         // IMPORTANT: Replace with your actual app name and email

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the path to your CSV file
-CSV_FILE="list.csv"
+CSV_FILE="finviz(1).csv"
 
 # Check if the CSV file exists
 if [ ! -f "$CSV_FILE" ]; then
